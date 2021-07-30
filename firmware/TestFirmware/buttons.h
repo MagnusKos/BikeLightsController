@@ -10,10 +10,29 @@
 #define BUT_MUX
 #ifdef BUT_MUX
   #define B1 0      //Button 1 is pressed
-  #define B2 350    //Button 2 is pressed
-  #define B3 470    //Button 3 is pressed
-  #define BX 600    //No button pressed
+  #define B2 500    //Button 2 is pressed
+  #define B3 650    //Button 3 is pressed
+  #define BX 700    //No button pressed
 #endif
+
+/* *** Button codes: ***
+ * Short    Long
+ * 1        129
+ * 2        130
+ * 3        131
+ */
+#define BUT_1S            1
+#define BUT_1L            129
+#define BUT_2S            2
+#define BUT_2L            130
+#define BUT_3S            3
+#define BUT_3L            131
+ 
+#define ACT_FLASH         BUT_2S
+#define ACT_HIGH_BEAM     BUT_2L
+#define ACT_POWER         BUT_3L
+#define ACT_ADAPTIVE      BUT_1S
+#define ACT_LOW_BEAM      BUT_3S
 
 byte mapButtonNum(word val) {
   if ((val < B2) && (val >= B1))
