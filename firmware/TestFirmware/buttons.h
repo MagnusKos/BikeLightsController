@@ -2,6 +2,8 @@
  *  Presented ADC values supposed to be used in the 'greater than' evaluations.
  */
 
+#pragma once
+
 #define BUT_DEBOUNCE  10
 #define BUT_LONGPRESS 33 //If we are waiting for 2 ticks 15ms each, then 1000ms/(15ms*2)=33
 #define BUT_LONG_MASK 0b10000000

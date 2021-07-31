@@ -1,16 +1,23 @@
 #include <Arduino_FreeRTOS.h>
 #include <queue.h>
+#include <semphr.h>
 
 #include "pins.h"
 #include "buttons.h"
 #include "readings.h"
 #include "lights.h"
-//#include "functions.h"
+#include "functions.h"
+
+// *** Variables section ***
 
 QueueHandle_t buttonQueue;
 QueueHandle_t readingsQueue;
 
-//*** Tasks section ***
+byte beam_pwm[3];            //current pwm values, use with beamMutex
+byte beam_state;             //bitmap with state flags, see "lights.h"
+SemaphoreHandle_t beamMutex;
+
+// *** Tasks section ***
 
 void TaskCheckButton(void *pvParameters) {
   (void) pvParameters;
@@ -32,7 +39,7 @@ void TaskCheckButton(void *pvParameters) {
         if (press_ticks < 255) //we don't want to reset a counter when it is already a 255 in it
           press_ticks += 1;
       }
-      press_ticks = (press_ticks>=BUT_LONGPRESS)?1:0; //binarizing the pressing time to say is it longpress or not
+      press_ticks = (press_ticks >= BUT_LONGPRESS)?1:0; //binarizing the pressing time to say is it longpress or not
       button_state = packButtonState(mapButtonNum(state_cur), press_ticks); //mapping button number and packing it with longetivity info into 1 byte
       xQueueSend(buttonQueue, &button_state, 2); //send the packed button info, we don't need to wait too long to send the command
     }
@@ -60,24 +67,47 @@ void TaskCheckReadings(void* pvParameters){
  *  the pressed button code and generate some command to execute. It waits for a data from button queue indefinitely,
  *  so it can't run adaptive lights.
  */
-void TaskLightsWorker(void* pvParameters){
-  byte beam_h, beam_l, beam_r; //current pwm values
+void TaskCommandsWorker(void* pvParameters){
+  byte beam_temp_pwm; // temporary pwm value
   byte button;
-  byte state; //bitmap with state flags, see "lights.h"
   for(;;)
   {
     if (xQueueReceive(buttonQueue, &button, portMAX_DELAY) == pdPASS) {
-      switch(button) {
-        case ACT_FLASH:
-          analogWrite(BEAM_HIGH, 255);
-          vTaskDelay(100 / portTICK_PERIOD_MS);
-          analogWrite(BEAM_HIGH, 0);
-          break;
-        case ACT_HIGH_BEAM:
-          break;
+      if (xSemaphoreTake(beamMutex, portMAX_DELAY) == pdTRUE) { //protect PWM vars from overwrite from another task
+        switch(button) {
+          
+          case ACT_FLASH:
+            beam_temp_pwm = (beam_pwm[BEAM_HIGH_NUM] > BEAM_HIGH_THRES)?0:255;
+            analogWrite(BEAM_HIGH, beam_temp_pwm);    //turn fully on or off
+            vTaskDelay(100 / portTICK_PERIOD_MS); //wait for ~100ms
+            analogWrite(BEAM_HIGH, beam_pwm[BEAM_HIGH_NUM]);       //restore previous power
+            break;
+            
+          case ACT_HIGH_BEAM:
+            beamSwitch(BEAM_HIGH, beam_state, beam_pwm);
+            break;
+
+          case ACT_LOW_BEAM:
+            beamSwitch(BEAM_LOW, beam_state, beam_pwm);
+            break;
+
+          case ACT_POWER:
+            beamSwitch(BEAM_DAY, beam_state, beam_pwm); //ToDo:
+            break;
+
+          case ACT_ADAPTIVE:
+
+            break;
+        
+        }
+        xSemaphoreGive(beamMutex); //we don't need to modify PWM vars anymore
       }
     }
   }
+}
+
+void TaskAdaptiveWorker(void* pvParameters){
+  
 }
 
 void TaskPrintToSerial(void* pvParameters){
@@ -100,14 +130,18 @@ void TaskPrintToSerial(void* pvParameters){
   }
 }
 
-//*** Functions section ***
+// *** Functions section ***
 
 
-//*** Main section ***
+// *** Main section ***
 
 void setup() {
   buttonQueue = xQueueCreate(1, sizeof(byte));
   readingsQueue = xQueueCreate(1, sizeof(byte));
+
+  beamMutex = xSemaphoreCreateMutex();
+  beam_state = 0b00000000;
+  zeroArray(beam_pwm, 3);
 
   xTaskCreate(TaskCheckButton, "CheckButton", 50, NULL, 2, NULL);     //50 is enougth, 7 words are "in a pocket"
   xTaskCreate(TaskCheckReadings, "CheckReadings", 64, NULL, 0, NULL); //64, 7 are free

@@ -1,3 +1,5 @@
+#pragma once
+
 #include "functions.h"
 
 #define NORM_RANGE_L 0   //Minimum value after normalization

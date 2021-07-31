@@ -1,3 +1,5 @@
+#pragma once
+
 //*** Pins definition section ***
 
 #define P_BEAM_LOW 5
