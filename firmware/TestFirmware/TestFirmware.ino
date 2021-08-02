@@ -26,15 +26,15 @@ void TaskCheckButton(void *pvParameters) {
   byte button_state;
   for (;;)
   {
-    while(analogRead(P_BUTTON) >= BX)  //do nothing for 60ms, while no button is pressed
+    while(analogRead(P_BUTTON_MUL) >= BX)  //do nothing for 60ms, while no button is pressed
         vTaskDelay(2);
-    state_prev = analogRead(P_BUTTON); //measure once
+    state_prev = analogRead(P_BUTTON_MUL); //measure once
     vTaskDelay(2);                   //debounce delay
-    state_cur = analogRead(P_BUTTON);  //measure twice
+    state_cur = analogRead(P_BUTTON_MUL);  //measure twice
     state_diff = (state_cur > state_prev)?(state_cur - state_prev):(state_prev - state_cur);  //calculate difference between measurements
     if (state_diff <= BUT_DEBOUNCE)  //some strange debounce check
     {
-      while(analogRead(P_BUTTON) < BX) { //waiting for a button to be released, count "time"
+      while(analogRead(P_BUTTON_MUL) < BX) { //waiting for a button to be released, count "time"
         vTaskDelay(2);
         if (press_ticks < 255) //we don't want to reset a counter when it is already a 255 in it
           press_ticks += 1;
@@ -73,29 +73,29 @@ void TaskCommandsWorker(void* pvParameters){
   for(;;)
   {
     if (xQueueReceive(buttonQueue, &button, portMAX_DELAY) == pdPASS) {
-      if (xSemaphoreTake(beamMutex, portMAX_DELAY) == pdTRUE) { //protect PWM vars from overwrite from another task
+      if (xSemaphoreTake(beamMutex, portMAX_DELAY) == pdTRUE) {                   //protect PWM vars from overwrite from another task
         switch(button) {
           
           case ACT_FLASH:
-            beam_temp_pwm = (beam_pwm[BEAM_HIGH_NUM] > BEAM_HIGH_THRES)?0:255;
-            analogWrite(BEAM_HIGH, beam_temp_pwm);    //turn fully on or off
-            vTaskDelay(100 / portTICK_PERIOD_MS); //wait for ~100ms
-            analogWrite(BEAM_HIGH, beam_pwm[BEAM_HIGH_NUM]);       //restore previous power
+            beam_temp_pwm = (beam_pwm[BEAM_HIGH] > BEAM_HIGH_THRES)?0:255;
+            analogWrite(P_BEAM_HIGH, beam_temp_pwm);                              //turn fully on or off
+            vTaskDelay(100 / portTICK_PERIOD_MS);                                 //wait for ~100ms
+            analogWrite(P_BEAM_HIGH, beam_pwm[BEAM_HIGH]);                        //restore previous power
             break;
             
           case ACT_HIGH_BEAM:
-            beamSwitch(BEAM_HIGH, beam_state, beam_pwm);
+            beamSwitch(BEAM_HIGH, &beam_state, &beam_pwm[BEAM_HIGH]);
             break;
 
           case ACT_LOW_BEAM:
-            beamSwitch(BEAM_LOW, beam_state, beam_pwm);
+            beamSwitch(BEAM_LOW, &beam_state, &beam_pwm[BEAM_LOW]);
             break;
 
           case ACT_POWER:
-            beamSwitch(BEAM_DAY, beam_state, beam_pwm); //ToDo:
+            beamDaySwitch(&beam_state, beam_pwm); //ToDo: test this thing
             break;
 
-          case ACT_ADAPTIVE:
+          case ACT_ADAPTIVE: //ToDo: create this thing
 
             break;
         
