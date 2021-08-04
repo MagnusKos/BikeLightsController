@@ -7,7 +7,10 @@
 #define BEAM_LOW_VAL    128
 #define BEAM_HIGH_VAL   255
 #define BEAM_REAR_VAL   128
-#define BEAM_DAY_VAL     32    //This value is applied to rear and low beams, high is off
+
+#define BEAM_LOW_D_VAL   32    //Low beam daymode power
+#define BEAM_REAR_D_VAL  32    //Rear lights daymode power
+#define BEAM_HIGH_D_VAL   0    //High lights daymode power, obviously it is a zero, but if you wish...
 
 #define BEAM_HIGH_THRES  64    //Minimum value for reversing flash action from "old_val-255-old_val" to "old_val-0-old_val"
 
@@ -21,23 +24,11 @@
 #define BEAM_LOW          0
 #define BEAM_HIGH         1
 #define BEAM_REAR         2
-#define BEAM_DAY          3        //virtual
-
-#define P_BEAM_DAY      128        //virtual pin, maybe it should be placed in "pins.h"?
-
-//#define BEAM_LOW_PIN    P_BEAM_LOW   //helper, alias of pin
-//#define BEAM_REAR_PIN   P_BEAM_REAR  //helper, alias of pin
-//#define BEAM_DAY_PIN    128          //virtual pin
-//#ifdef BEAM_HYBRID
-//  #define BEAM_HIGH P_BEAM_LOW
-//#elif
-//  #define BEAM_HIGH P_BEAM_HIGH
-//#endif
   
-#define BEAM_SOFT_START false   //Slowly rise PWM value
+#define BEAM_SOFT_START true   //Slowly rise PWM value
 
 #ifdef BEAM_SOFT_START
-  #define BEAM_SS_DELAY   100 / portTICK_PERIOD_MS  //Rising PWM delay, ms
+  #define BEAM_SS_DELAY   30 / portTICK_PERIOD_MS  //Rising PWM delay, ms
   #define BEAM_SS_STEP     5                        //PWM increment
 #endif
 
@@ -61,12 +52,13 @@
 /* Here we have one byte bitmap with flags, representing binary states.
  *     MODE   |  BEAM
  *  [ 0 0 0 0 | 0 0 0 0 ]
- *    a - l r | - H L R
+ *    a h l r | - H L R
  *  
  *  H - high beam, if set - turned on according to the table of values
  *  L - low beam, if set - turned on according to the table of values
  *  R - rear lights, if set - turned on according to the table of values
  *  a - set if adaptive mode is on
+ *  h - set if high beam is turned off and able to be turned on; not an actual daymode flag
  *  l - set if low beam in a day mode
  *  r - set if rear beam in a day mode
  */
@@ -78,6 +70,7 @@
 
 //Mode-half flags, not in use yet
 #define BEAM_ADAPT_MASK     0b10000000
+#define BEAM_HIGH_D_MASK    0b01000000
 #define BEAM_LOW_D_MASK     0b00100000
 #define BEAM_REAR_D_MASK    0b00010000
 
@@ -92,15 +85,12 @@ byte mapBeamMask(byte beam){  //function returns mask by entering the beam num
       return BEAM_LOW_MASK;
       
     case BEAM_HIGH:
-      if (BEAM_HYBRID)        
-        return BEAM_LOW_MASK;
-      else
-        return BEAM_HIGH_MASK;
+      return BEAM_HIGH_MASK;
         
     case BEAM_REAR:
       return BEAM_REAR_MASK;
       
-    case BEAM_DAY:
+    default:
       return 0b00000000;        //What is this? I don't know!
   }
 }
@@ -114,13 +104,10 @@ byte mapBeamDayMask(byte beam){  //function returns day mask by entering the bea
       return BEAM_REAR_D_MASK;
 
     case BEAM_HIGH:
-      return BEAM_LOW_D_MASK;
-      
-    case BEAM_DAY:
-      return 0b00000000;        //What is this? I don't know! [1]
+      return BEAM_HIGH_D_MASK;
 
     default:
-      return 0b00000000;
+      return 0b00000000;        //What is this? I don't know! [1]
   }
 }
 
@@ -130,16 +117,29 @@ byte mapBeamVal(byte beam){  //function returns const PWM value by entering the 
       return BEAM_LOW_VAL;
 
     case BEAM_HIGH:
-      if (BEAM_HYBRID)        
-        return BEAM_LOW_VAL;
-      else
-        return BEAM_HIGH_VAL;
+      return BEAM_HIGH_VAL;
     
     case BEAM_REAR:
       return BEAM_REAR_VAL;
       
-    case BEAM_DAY:
+    default:
       return 0b00000000;        //What is this? I don't know! [2]
+  }
+}
+
+byte mapBeamDayVal(byte beam){ //function returns const PWM daytime value by entering the beam num
+    switch(beam){
+    case BEAM_LOW:
+      return BEAM_LOW_D_VAL;
+
+    case BEAM_HIGH:
+      return BEAM_HIGH_D_VAL;
+    
+    case BEAM_REAR:
+      return BEAM_REAR_D_VAL;
+      
+    default:
+      return 0b00000000;        //What is this? I don't know! [3]
   }
 }
 
@@ -156,9 +156,6 @@ byte mapBeamPin(byte beam){  //function returns a pin of the beam
     
     case BEAM_REAR:
       return P_BEAM_REAR;
-      
-    case BEAM_DAY:
-      return P_BEAM_DAY;        //What is this? It's the virtual pin, but why..? I don't know!
   }
 }
 
@@ -179,7 +176,7 @@ void beamSoftStop(byte pin, byte fin_val, byte* cur_val){  //SoftStop function, 
      analogWrite(pin, *cur_val);
      DELAY(BEAM_SS_DELAY);
   }
-  *cur_val -= *cur_val - fin_val;    //Substracting the residue
+  *cur_val -= *cur_val - fin_val;    //Subtracting the residue
   analogWrite(pin, *cur_val);
 }
 
@@ -205,51 +202,36 @@ void beamSwitch(byte beam, byte* state, byte* cur_val_arr){      //Turn on or of
   byte mask = mapBeamMask(beam);
   byte mask_d = mapBeamDayMask(beam);
   byte set_val = mapBeamVal(beam);
+  byte day_val = mapBeamDayVal(beam);
   byte pin = mapBeamPin(beam);
-  
-    //**********
-    if (*state & mask) {                                //if beam turned on and not in a daylight mode
-      if (beam == BEAM_HIGH)
-        if (BEAM_HYBRID) {
-          beamStop(P_BEAM_LOW, BEAM_LOW_VAL, &cur_val_arr[BEAM_LOW]);       //We are going to the low_beam pwm for a hybrid beam
-          *state |= BEAM_LOW_MASK;                               //We'll flip the high_beam flag later, so now we must set the low_beam's one
-        }
-        else
-          beamStop(pin, 0, &cur_val_arr[BEAM_HIGH]);             //We are going to the 0 pwm for a high beam
-      else {
-        beamStop(pin, BEAM_DAY_VAL, &cur_val_arr[beam]);         //We are going to the day pwm for rear or low beam
-        *state |= mask_d;                                        //Setting up the daylights flag
+
+    if (*state & mask) {     //If in a normal mode
+      if ((beam == BEAM_HIGH)&&(BEAM_HYBRID)) {                             //Hybrid high beam case, turning it off
+        beamStop(P_BEAM_LOW, BEAM_LOW_VAL, &cur_val_arr[BEAM_LOW]);         //We are going to the low_beam pwm for a hybrid beam
+        *state |= BEAM_LOW_MASK;                                            //Low beam in a normal mode
       }
-      *state &= ~mask;
-    }
-    
-    //**********
-    else if (*state & mask_d) {                                  //if the beam is in a daylight mode
-      if (beam == BEAM_HIGH)
-        if (BEAM_HYBRID) {
-          beamStart(P_BEAM_LOW, BEAM_HIGH_VAL, &cur_val_arr[BEAM_LOW]);       //We are going to the high_beam pwm for a hybrid beam
-          *state &= ~BEAM_LOW_MASK;                    //We'll flip the high_beam flag later, so now we must reset the low_beam's one
-        }
-        else
-          beamStart(pin, BEAM_HIGH_VAL, &cur_val_arr[BEAM_HIGH]);              //We are going to the beam_high_val for a high beam
-      else {
-        beamStart(pin, set_val, &cur_val_arr[beam]); 
+      else {                                                                //Any other beam case, switch it to a daymode
+        beamStop(pin, day_val, &cur_val_arr[beam]);                         //We are going to the day pwm for rear or low beam
+        *state &= ~BEAM_HIGH_D_MASK;                                        //This flag prevents the high beam to be turned on
       }
-      *state &= ~mask_d;
-      *state |= mask;
+      *state &= ~mask;                                                      //Reset normal mode flag for the current beam
+      *state |= mask_d;                                                     //Set daymode flag for the current beam
+      return;
     }
 
-    //**********
-    else                                                           //if the beam is turned off
-      if ((beam == BEAM_HIGH) && (*state & BEAM_LOW_MASK)) {       //if the beam is high and the low one is turned on
-        if (BEAM_HYBRID) {
-          beamStart(P_BEAM_LOW, BEAM_HIGH_VAL, &cur_val_arr[BEAM_LOW]);       //We are going to the high_beam pwm for a hybrid beam
-          *state &= ~BEAM_LOW_MASK;                    
-        }
-        else
-          beamStart(pin, BEAM_HIGH_VAL, &cur_val_arr[BEAM_HIGH]);              //We are going to the beam_high_val for a high beam
-        *state |= mask;
+    if (*state & mask_d) {   //If in a daymode
+      if ((beam == BEAM_HIGH)&&(BEAM_HYBRID)) {                             //Hybrid high beam case, turning it on
+        beamStart(P_BEAM_LOW, BEAM_HIGH_VAL, &cur_val_arr[BEAM_LOW]);       //We are going to the high_beam pwm for a hybrid beam
+        *state &= ~(BEAM_LOW_MASK | BEAM_LOW_D_MASK);                       //Low beam neither in a daymode nor in a normal mode
       }
+      else {                                                                //Any other beam case, switch it to a normal mode
+        beamStart(pin, set_val, &cur_val_arr[beam]);                        //We are going to the normal pwm for rear or low beam
+        *state |= BEAM_HIGH_D_MASK;                                         //This flag allows the high beam to be turned on
+      }
+      *state &= ~mask_d;                                                    //Reset daymode flag for the current beam
+      *state |= mask;                                                       //Set normal mode flag for the current beam
+      return;
+    }
 }
 
 /* ToDo:
@@ -259,9 +241,12 @@ void beamSwitch(byte beam, byte* state, byte* cur_val_arr){      //Turn on or of
  *      Actually, this isn't related to this "test" firmware.
  */
 void beamDaySwitch(byte* state, byte* cur_val_arr) {    //Turn on or off daylights. Actually, it is powering on/off
-  if (*state & BEAM_HIGH_MASK) {  //turning off the high beam, doesn't matter if we turning everything on or off
-    beamStop(mapBeamPin(BEAM_HIGH), 0, &cur_val_arr[BEAM_HIGH]);
-    *state &= ~(BEAM_HIGH_MASK | (BEAM_HYBRID?BEAM_LOW:0x00));
+  if (*state & (BEAM_HIGH_MASK | BEAM_HIGH_D_MASK)) {   //Turn everything off if it is a high beam state
+    beamStop(mapBeamPin(BEAM_HIGH), 0, &cur_val_arr[BEAM_HYBRID?BEAM_LOW:BEAM_HIGH]);
+    beamStop(P_BEAM_LOW, 0, &cur_val_arr[BEAM_LOW]);
+    beamStop(P_BEAM_REAR, 0, &cur_val_arr[BEAM_REAR]);
+    *state &= ~(BEAM_HIGH_MASK | BEAM_HIGH_D_MASK | BEAM_LOW_MASK | BEAM_LOW_D_MASK | BEAM_REAR_MASK | BEAM_REAR_D_MASK);
+    return;
   }
 
   if (*state & (BEAM_LOW_MASK | BEAM_LOW_D_MASK)) {     //Turn off low beam
@@ -269,7 +254,7 @@ void beamDaySwitch(byte* state, byte* cur_val_arr) {    //Turn on or off dayligh
     *state &= ~(BEAM_LOW_MASK | BEAM_LOW_D_MASK);
   }
   else {                                                //Turn on low beam (day mode)
-    beamStart(P_BEAM_LOW, BEAM_DAY_VAL, &cur_val_arr[BEAM_LOW]);
+    beamStart(P_BEAM_LOW, BEAM_LOW_D_VAL, &cur_val_arr[BEAM_LOW]);
     *state |= BEAM_LOW_D_MASK;
   }
 
@@ -278,7 +263,7 @@ void beamDaySwitch(byte* state, byte* cur_val_arr) {    //Turn on or off dayligh
       *state &= ~(BEAM_REAR_MASK | BEAM_REAR_D_MASK);
   }
   else {                                                //Turn on rear lights (day mode)
-    beamStart(P_BEAM_REAR, BEAM_DAY_VAL, &cur_val_arr[BEAM_REAR]);
+    beamStart(P_BEAM_REAR, BEAM_REAR_D_VAL, &cur_val_arr[BEAM_REAR]);
     *state |= BEAM_REAR_D_MASK;
   }
 }
