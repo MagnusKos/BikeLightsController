@@ -6,6 +6,10 @@
 #define P_BEAM_HIGH    3
 #define P_BEAM_REAR    6
 
+// *** Digital inputs ***
+
+#define P_BRAKE       11  //brake sensor pin
+
 // *** ADC inputs ***
 
 #define P_VOLTAGE     A3
@@ -18,8 +22,8 @@
 #define P_BUTTON_B     9
 #define P_BUTTON_C    10
 
-
 // *** LEDs' pins ***
 
-#define P_LED_R        7
-#define P_LED_Y        8
+#define P_LED_B        4  //blue led
+#define P_LED_R        3  //red led
+#define P_LED_G        2  //green led

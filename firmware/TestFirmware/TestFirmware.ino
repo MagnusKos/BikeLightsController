@@ -6,16 +6,22 @@
 #include "buttons.h"
 #include "readings.h"
 #include "lights.h"
+#include "communication.h"
+
 #include "functions.h"
+
 
 // *** Variables section ***
 
 QueueHandle_t buttonQueue;
 QueueHandle_t readingsQueue;
+QueueHandle_t debugQueue;
 
 byte beam_pwm[3];            //current pwm values, use with beamMutex
 byte beam_state;             //bitmap with state flags, see "lights.h"
 SemaphoreHandle_t beamMutex;
+
+byte com_tx_buff[COM_BUFF_SIZE];
 
 // *** Tasks section ***
 
@@ -68,8 +74,11 @@ void TaskCheckReadings(void* pvParameters){
  *  so it can't run adaptive lights.
  */
 void TaskCommandsWorker(void* pvParameters){
+  UBaseType_t uxHighWaterMark;
   byte beam_temp_pwm; // temporary pwm value
   byte button;
+  uxHighWaterMark = uxTaskGetStackHighWaterMark( NULL );
+  xQueueSend(debugQueue, &uxHighWaterMark, 2);
   for(;;)
   {
     if (xQueueReceive(buttonQueue, &button, portMAX_DELAY) == pdPASS) {
@@ -77,18 +86,28 @@ void TaskCommandsWorker(void* pvParameters){
         switch(button) {
           
           case ACT_FLASH:
-            beam_temp_pwm = (beam_pwm[BEAM_HIGH] > BEAM_HIGH_THRES)?0:255;
-            analogWrite(P_BEAM_HIGH, beam_temp_pwm);                              //turn fully on or off
-            vTaskDelay(100 / portTICK_PERIOD_MS);                                 //wait for ~100ms
-            analogWrite(P_BEAM_HIGH, beam_pwm[BEAM_HIGH]);                        //restore previous power
+            if (beam_state) {
+              beam_temp_pwm = (beam_pwm[BEAM_HYBRID?BEAM_LOW:BEAM_HIGH] > BEAM_HIGH_THRES)?0:255;
+              analogWrite(mapBeamPin(BEAM_HIGH), beam_temp_pwm);                              //turn fully on or off
+              beam_state ^= BEAM_HIGH_MASK;
+              vTaskDelay(100 / portTICK_PERIOD_MS);                                           //wait for ~100ms
+              analogWrite(mapBeamPin(BEAM_HIGH), beam_pwm[BEAM_HYBRID?BEAM_LOW:BEAM_HIGH]);   //restore previous power
+              beam_state ^= BEAM_HIGH_MASK;
+            }
             break;
             
           case ACT_HIGH_BEAM:
-            beamSwitch(BEAM_HIGH, &beam_state, &beam_pwm[BEAM_HIGH]);
+            beamSwitch(BEAM_HIGH, &beam_state, beam_pwm);
             break;
 
           case ACT_LOW_BEAM:
-            beamSwitch(BEAM_LOW, &beam_state, &beam_pwm[BEAM_LOW]);
+            if (beam_state & BEAM_HIGH_MASK) {
+              beamSwitch(BEAM_HIGH, &beam_state, beam_pwm);
+            }
+            else {
+              beamSwitch(BEAM_LOW, &beam_state, beam_pwm);
+              beamSwitch(BEAM_REAR, &beam_state, beam_pwm);
+            }
             break;
 
           case ACT_POWER:
@@ -103,30 +122,54 @@ void TaskCommandsWorker(void* pvParameters){
         xSemaphoreGive(beamMutex); //we don't need to modify PWM vars anymore
       }
     }
+    uxHighWaterMark = uxTaskGetStackHighWaterMark( NULL );
+    xQueueSend(debugQueue, &uxHighWaterMark, 2);
+    vTaskDelay(2);
   }
 }
 
 void TaskAdaptiveWorker(void* pvParameters){
+  for (;;) {
+    
+  }
   
+}
+
+void TaskIndication(void* pvParameters){
+  for (;;) {
+    
+  }
 }
 
 void TaskPrintToSerial(void* pvParameters){
   Serial.begin(9600);
   while (!Serial) {
-    vTaskDelay(1);
+    vTaskDelay(2);
   }
 
   byte button, readings;
+  UBaseType_t mark;
+  com_tx_buff[COM_TX_SIG_MSB] = COM_SIG_MSB;
+  com_tx_buff[COM_TX_SIG_LSB] = COM_SIG_LSB;
 
   for (;;) {
-    if (xQueueReceive(buttonQueue, &button, 2) == pdPASS) {
-      Serial.print("Button: ");
-      Serial.println(button);
-    }
     if (xQueueReceive(readingsQueue, &readings, 2) == pdPASS) {
-      Serial.print("Readings: ");
-      Serial.println(readings, BIN);
+      com_tx_buff[COM_TX_READINGS] = readings;
     }
+    if (xQueueReceive(debugQueue, &mark, 2) == pdPASS) {
+      com_tx_buff[COM_TX_DBG] = mark;
+    }
+    
+    if (xSemaphoreTake(beamMutex, portMAX_DELAY) == pdTRUE) {
+      com_tx_buff[COM_TX_HIGH] = beam_pwm[BEAM_HIGH];
+      com_tx_buff[COM_TX_LOW] = beam_pwm[BEAM_LOW];
+      com_tx_buff[COM_TX_REAR] = beam_pwm[BEAM_REAR];
+      com_tx_buff[COM_TX_STATE] = beam_state;
+      
+      xSemaphoreGive(beamMutex);
+    }
+    Serial.write(com_tx_buff, COM_BUFF_SIZE);
+    vTaskDelay(33);
   }
 }
 
@@ -139,12 +182,15 @@ void setup() {
   buttonQueue = xQueueCreate(1, sizeof(byte));
   readingsQueue = xQueueCreate(1, sizeof(byte));
 
+  debugQueue = xQueueCreate(1, sizeof(UBaseType_t));
+
   beamMutex = xSemaphoreCreateMutex();
   beam_state = 0b00000000;
   zeroArray(beam_pwm, 3);
 
-  xTaskCreate(TaskCheckButton, "CheckButton", 50, NULL, 2, NULL);     //50 is enougth, 7 words are "in a pocket"
-  xTaskCreate(TaskCheckReadings, "CheckReadings", 64, NULL, 0, NULL); //64, 7 are free
+  xTaskCreate(TaskCheckButton, "CheckButton", 50, NULL, 2, NULL);        //50 is enougth, 7 words are "in a pocket"
+  xTaskCreate(TaskCheckReadings, "CheckReadings", 64, NULL, 0, NULL);    //64, 7 are free
+  xTaskCreate(TaskCommandsWorker, "CommandsWorker", 64, NULL, 2, NULL);  //64, 4 are free
   xTaskCreate(TaskPrintToSerial, "PrintSerial", 128, NULL, 2, NULL);
 }
 
