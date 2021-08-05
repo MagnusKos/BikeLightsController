@@ -4,11 +4,11 @@
 
 // *** PWM values section ***
 
-#define BEAM_LOW_VAL    128
+#define BEAM_LOW_VAL     72
 #define BEAM_HIGH_VAL   255
-#define BEAM_REAR_VAL   128
+#define BEAM_REAR_VAL   100
 
-#define BEAM_LOW_D_VAL   32    //Low beam daymode power
+#define BEAM_LOW_D_VAL   20    //Low beam daymode power
 #define BEAM_REAR_D_VAL  32    //Rear lights daymode power
 #define BEAM_HIGH_D_VAL   0    //High lights daymode power, obviously it is a zero, but if you wish...
 
