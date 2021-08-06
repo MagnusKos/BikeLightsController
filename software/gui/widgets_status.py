@@ -12,42 +12,47 @@ class StatusWidget(QtWidgets.QWidget):
         self.label_pwm_l = QtWidgets.QLabel("Low beam PWM:", alignment=QtCore.Qt.AlignLeft)
         self.label_pwm_r = QtWidgets.QLabel("Rear lights PWM:", alignment=QtCore.Qt.AlignLeft)
 
+        self.separator = QtWidgets.QFrame()
+        self.separator.setFrameShape(QtWidgets.QFrame.VLine)
+        self.separator.setFrameShadow(QtWidgets.QFrame.Sunken)
+
         self.edit_pwm_h = QtWidgets.QLineEdit("0", alignment=QtCore.Qt.AlignRight, readOnly=True)
         self.edit_pwm_l = QtWidgets.QLineEdit("0", alignment=QtCore.Qt.AlignRight, readOnly=True)
         self.edit_pwm_r = QtWidgets.QLineEdit("0", alignment=QtCore.Qt.AlignRight, readOnly=True)
 
-        self.align_main = QtWidgets.QHBoxLayout(self)
-        self.grid_pwm = QtWidgets.QGridLayout()  # self.align_main
-        self.align_raw = QtWidgets.QVBoxLayout()  # self.align_main
-        self.align_debug = QtWidgets.QHBoxLayout()  # self.align_raw
+        self.layoutv_main = QtWidgets.QVBoxLayout(self)
+        self.layouth_main = QtWidgets.QHBoxLayout()
+        self.layoutv_main.addWidget(QtWidgets.QLabel("Status", alignment=QtCore.Qt.AlignCenter))
+        self.layoutv_main.addLayout(self.layouth_main)
 
-        self.align_raw.setAlignment(QtCore.Qt.AlignCenter)
+        self.layout_pwm = QtWidgets.QGridLayout()  # self.align_main
+        self.layout_raw = QtWidgets.QVBoxLayout()  # self.align_main
+        self.layout_debug = QtWidgets.QHBoxLayout()  # self.align_raw
 
-        self.align_main.addLayout(self.grid_pwm)
-        self.separator = QtWidgets.QFrame()
-        self.separator.setFrameShape(QtWidgets.QFrame.VLine)
-        self.separator.setFrameShadow(QtWidgets.QFrame.Sunken)
-        self.align_main.addWidget(self.separator)
-        self.align_main.addLayout(self.align_raw)
+        self.layout_raw.setAlignment(QtCore.Qt.AlignCenter)
 
-        self.grid_pwm.setColumnMinimumWidth(1, 4)
-        self.grid_pwm.addWidget(self.label_pwm_h, 0, 0)
-        self.grid_pwm.addWidget(self.label_pwm_l, 1, 0)
-        self.grid_pwm.addWidget(self.label_pwm_r, 2, 0)
+        self.layouth_main.addLayout(self.layout_pwm)
+        self.layouth_main.addWidget(self.separator)
+        self.layouth_main.addLayout(self.layout_raw)
 
-        self.grid_pwm.addWidget(self.edit_pwm_h, 0, 2)
-        self.grid_pwm.addWidget(self.edit_pwm_l, 1, 2)
-        self.grid_pwm.addWidget(self.edit_pwm_r, 2, 2)
+        self.layout_pwm.setColumnMinimumWidth(1, 4)
+        self.layout_pwm.addWidget(self.label_pwm_h, 0, 0)
+        self.layout_pwm.addWidget(self.label_pwm_l, 1, 0)
+        self.layout_pwm.addWidget(self.label_pwm_r, 2, 0)
 
-        self.lights_state_widget = ByteStateWidget(label="LIGHTS")
-        self.readings_state_widget = ByteStateWidget(label="VOL | LUX")
+        self.layout_pwm.addWidget(self.edit_pwm_h, 0, 2)
+        self.layout_pwm.addWidget(self.edit_pwm_l, 1, 2)
+        self.layout_pwm.addWidget(self.edit_pwm_r, 2, 2)
+
+        self.lights_state_widget = ByteStateWidget(label="STATE")
+        self.readings_state_widget = ByteStateWidget(label="VOLT |  LUX")
         self.label_debug = QtWidgets.QLabel("Debug value:", alignment=QtCore.Qt.AlignLeft)
         self.edit_debug = QtWidgets.QLineEdit("0", alignment=QtCore.Qt.AlignRight, readOnly=True)
-        self.align_raw.addWidget(self.lights_state_widget)
-        self.align_raw.addWidget(self.readings_state_widget)
-        self.align_raw.addLayout(self.align_debug)
-        self.align_debug.addWidget(self.label_debug)
-        self.align_debug.addWidget(self.edit_debug)
+        self.layout_raw.addWidget(self.lights_state_widget)
+        self.layout_raw.addWidget(self.readings_state_widget)
+        self.layout_raw.addLayout(self.layout_debug)
+        self.layout_debug.addWidget(self.label_debug)
+        self.layout_debug.addWidget(self.edit_debug)
 
     @QtCore.Slot()
     def incoming_data(self, data: list):
@@ -62,23 +67,28 @@ class StatusWidget(QtWidgets.QWidget):
 class FlagWidget(QtWidgets.QWidget):
     def __init__(self):
         super().__init__()
-        self.setFixedHeight(11)
-        self.setFixedWidth(11)
+        self.setFixedHeight(12)
+        self.setFixedWidth(12)
 
         self.set_state_color = QtCore.Qt.darkGreen
         self.reset_state_color = QtCore.Qt.gray
         self.cur_color = self.reset_state_color
 
         self.painter = QtGui.QPainter()
-        self.painter.setRenderHint(QtGui.QPainter.Antialiasing)
+        #self.painter.setRenderHint(QtGui.QPainter.Antialiasing)
 
         self.reset_flag()
+
+        self.blur = QtWidgets.QGraphicsBlurEffect()
+        self.blur.setBlurHints(QtWidgets.QGraphicsBlurEffect.PerformanceHint)
+        self.blur.setBlurRadius(2)
+        self.setGraphicsEffect(self.blur)
 
     def paintEvent(self, event: PySide6.QtGui.QPaintEvent) -> None:
         super().paintEvent(event)
         self.painter.begin(self)
         self.painter.setBrush(self.cur_color)
-        self.painter.drawRoundedRect(0.5, 0.5, 10, 10, 2, 2)
+        self.painter.drawRoundedRect(2, 2, 10, 10, 2, 2)
         self.painter.end()
 
     def set_flag(self):
