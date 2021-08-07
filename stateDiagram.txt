@@ -1,0 +1,52 @@
+@startuml
+
+[*] --> DayMode : ACT_POWER
+
+DayMode --> LowBeam : ACT_LOW_BEAM
+DayMode --> HighBeam : ACT_HIGH_BEAM
+DayMode --> Flash : ACT_FLASH
+DayMode --> AdaptiveMode : ACT_ADAPTIVE
+DayMode --> TestMode : SIG_TESTMODE
+DayMode --> [*] : ACT_POWER
+
+LowBeam --> DayMode : ACT_LOW_BEAM
+LowBeam --> HighBeam : ACT_HIGH_BEAM
+LowBeam --> Flash : ACT_FLASH
+LowBeam --> AdaptiveMode : ACT_ADAPTIVE
+LowBeam --> TestMode : SIG_TESTMODE
+LowBeam --> [*] : ACT_POWER
+
+HighBeam --> LowBeam : ACT_HIGH_BEAM
+HighBeam --> LowBeam : ACT_LOW_BEAM
+HighBeam --> Flash : ACT_FLASH
+HighBeam --> AdaptiveMode : ACT_ADAPTIVE
+HighBeam --> TestMode : SIG_TESTMODE
+HighBeam --> [*] : ACT_POWER
+
+TestMode --> DayMode : SIG_TESTMODE
+
+state AdaptiveMode {
+  [*] --> AdaptiveDayMode : LUX_DAYMODE
+  [*] --> AdaptiveLowBeam : LUX_LOW_BEAM
+  [*] --> AdaptiveHighBeam : LUX_HIGH_BEAM
+  
+  AdaptiveDayMode --> AdaptiveLowBeam : LUX_LOW_BEAM
+  AdaptiveDayMode --> AdaptiveHighBeam : LUX_HIGH_BEAM
+  AdaptiveDayMode --> DayMode : ACT_ADAPTIVE
+  AdaptiveDayMode --> Flash : ACT_FLASH
+  AdaptiveDayMode --> [*] : ACT_POWER
+  
+  AdaptiveLowBeam --> AdaptiveDayMode : LUX_DAYMODE
+  AdaptiveLowBeam --> AdaptiveHighBeam : LUX_HIGH_BEAM
+  AdaptiveLowBeam --> DayMode : ACT_ADAPTIVE
+  AdaptiveLowBeam --> Flash : ACT_FLASH
+  AdaptiveLowBeam --> [*] : ACT_POWER
+  
+  AdaptiveHighBeam --> AdaptiveDayMode : LUX_DAYMODE
+  AdaptiveHighBeam --> AdaptiveLowBeam : LUX_LOW_BEAM
+  AdaptiveHighBeam --> DayMode : ACT_ADAPTIVE
+  AdaptiveHighBeam --> Flash : ACT_FLASH
+  AdaptiveHighBeam --> [*] : ACT_POWER
+}
+
+@enduml
